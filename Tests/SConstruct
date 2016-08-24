@@ -1,0 +1,25 @@
+import os
+import logging
+
+def get_logger():
+	return logging.getLogger(__name__)
+
+env = Environment(ENV=os.environ)
+
+logging.basicConfig(level=logging.INFO)
+
+cpppath = [".", "#../", ]
+cppdefines = ["TEST_HARNESS"]
+cppflags = ["-Wall", "-Wextra", "-g"]
+cppincludes = []
+
+for target in COMMAND_LINE_TARGETS:
+
+	test_object_paths = [src.format(target) for src in ["{}.test.cpp", "../{}.cpp"]]
+	
+	test_objects = [Object(test_object_path, CPPPATH=cpppath, CPPDEFINES=cppdefines, CPPFLAGS=cppflags) for test_object_path in test_object_paths]
+
+	program = env.Program(test_objects, cpppath=cpppath, LIBS=['cppunit'], CC='g++')
+
+	test_alias = env.Alias(target, [program], "./"+program[0].path)
+	env.AlwaysBuild(test_alias)
