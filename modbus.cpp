@@ -48,26 +48,49 @@ static MODBUS_FUNCTION_CODE get_message_function_code(char const * const message
 	return (MODBUS_FUNCTION_CODE)message[1];
 }
 
-static void handle_read_coils(char const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
+static void handle_read_coils(void const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
 {
 	if (!handlers.read_coils) { return; }
 
-	uint16_t first_coil = ((uint8_t)data[0] << 8) + (uint8_t)data[1];
-	uint16_t n_coils = ((uint8_t)data[2] << 8) + (uint8_t)data[3];
+	uint8_t * pfirst_coil = (uint8_t*)data;
+	uint8_t * pn_coils = (uint8_t*)data + 2;
+
+	uint16_t first_coil = (pfirst_coil[0] << 8) + pfirst_coil[1];
+	uint16_t n_coils = (pn_coils[0] << 8) + pn_coils[1];
 
 	handlers.read_coils(first_coil, n_coils);
 }
 
-static void handle_read_discrete_inputs(char const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
+static void handle_read_discrete_inputs(void const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
 {
-	(void)data;
 	if (!handlers.read_discrete_inputs) { return; }
+
+	uint8_t * pfirst_input = (uint8_t*)data;
+	uint8_t * pn_inputs = (uint8_t*)data + 2;
+
+	uint16_t first_input = (pfirst_input[0] << 8) + pfirst_input[1];
+	uint16_t n_inputs = (pn_inputs[0] << 8) + pn_inputs[1];
+
+	handlers.read_discrete_inputs(first_input, n_inputs);
 }
 
-static void handle_write_single_coil(char const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
+static void handle_write_single_coil(void const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
 {
-	(void)data;
 	if (!handlers.write_single_coil) { return; }
+
+	uint8_t * pcoil = (uint8_t*)data;
+	uint8_t * pon_off_data  = (uint8_t*)data + 2;
+
+	bool valid_on_off_data = false;
+	valid_on_off_data |= (pon_off_data[0] == 0xFF) && (pon_off_data[1] == 0x00);
+	valid_on_off_data |= (pon_off_data[0] == 0x00) && (pon_off_data[1] == 0x00);
+
+	if (!valid_on_off_data) { return; }
+
+	uint16_t coil = (pcoil[0] << 8) + pcoil[1];
+	bool on = pon_off_data[0] == 0xFF;
+
+	handlers.write_single_coil(coil, on);
 }
 
 static void handle_write_multiple_coils(char const * const data, const MODBUS_HANDLER_FUNCTIONS& handlers)
