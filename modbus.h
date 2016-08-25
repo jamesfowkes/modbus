@@ -11,10 +11,25 @@ struct modbus_handler_functions
 	void (*read_holding_registers)(uint16_t reg, uint16_t n_registers);
 	void (*write_holding_register)(uint16_t reg, int16_t value);
 	void (*write_holding_registers)(uint16_t first_reg, uint16_t n_registers, uint8_t n_values, int16_t * values);
-	void (*read_write_registers)(uint16_t read_start_reg, uint16_t n_registers, uint16_t write_start_reg, uint16_t n_values, uint16_t * int16_t);
+	void (*read_write_registers)(uint16_t read_start_reg, uint16_t n_registers, uint16_t write_start_reg, uint16_t n_values, int16_t * values);
 	void (*mask_write_register)(uint16_t reg, uint16_t and_mask, uint16_t or_mask);
 };
-typedef struct modbus_handler_functions MODBUS_HANDLER_FUNCTIONS;
+
+struct modbus_handler_data
+{
+	uint8_t * write_multiple_coils;
+	uint16_t max_coils;
+
+	int16_t * write_holding_registers;
+	uint16_t max_holding_registers;
+};
+
+struct modbus_handler
+{
+	struct modbus_handler_functions functions;
+	struct modbus_handler_data data;
+};
+typedef struct modbus_handler MODBUS_HANDLER;
 
 enum modbus_function_code
 {
@@ -33,6 +48,6 @@ typedef enum modbus_function_code MODBUS_FUNCTION_CODE;
 
 void modbus_init(uint8_t address);
 
-void modbus_service_message(char const * const message, const MODBUS_HANDLER_FUNCTIONS& handlers);
+void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler);
 
 #endif
