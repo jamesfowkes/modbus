@@ -11,13 +11,6 @@
 
 #include "modbus.h"
 
-
-/*
- * Private Module Variables
- */
-
-static uint8_t s_this_address = 0x00;
-
 /*
  * Private Module Functions
  */
@@ -41,13 +34,30 @@ static void copy_to_holding_registers(uint16_t n_registers, uint8_t * data, int1
 	}	
 }
 
-static void copy_to_coils(uint16_t n_coils, uint8_t *data, uint8_t * coils)
+static void copy_byte_to_coils(uint8_t data, uint16_t n_coils, bool * coils)
 {
-	uint16_t i;
-	for (i = 0; i < n_coils; i++)
+	uint8_t i = 1;
+	int8_t coil = 0;
+	n_coils = (n_coils <= 8) ? n_coils : 8; 
+
+	for(i = 1; coil < n_coils; i <<= 1)
 	{
-		coils[i] = data[i];
-	}	
+		coils[coil] = data & i;
+		coil++;
+	}
+}
+
+static void copy_to_multiple_coils(uint16_t n_coils, uint8_t *data, bool * coils)
+{
+	uint8_t byte = 0;
+	while(n_coils >= 8)
+	{
+		copy_byte_to_coils(data[byte], n_coils, coils);
+		n_coils -= 8;
+		byte++;
+	}
+	copy_byte_to_coils(data[byte], n_coils, coils);
+
 }
 
 static bool bytes_to_on_off_data(uint8_t * bytes)
@@ -55,10 +65,10 @@ static bool bytes_to_on_off_data(uint8_t * bytes)
 	return bytes[0] == 0xFF;
 }
 
-static uint8_t get_number_of_required_bytes_for_coils(uint16_t n_coils)
-{
-	return (n_coils & 7) ? (n_coils / 8) + 1 : n_coils / 8;
-}
+//static uint8_t get_number_of_required_bytes_for_coils(uint16_t n_coils)
+//{
+//	return (n_coils & 7) ? (n_coils / 8) + 1 : n_coils / 8;
+//}
 
 static bool is_valid_function_code(uint8_t code)
 {
@@ -86,24 +96,45 @@ static MODBUS_FUNCTION_CODE get_message_function_code(char const * const message
 	return (MODBUS_FUNCTION_CODE)message[1];
 }
 
-static void handle_read_coils(void const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_coils(void const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.read_coils) { return; }
+	if (!handler.functions.read_coils) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t first_coil = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_coils = bytes_to_uint16_t((uint8_t*)data+2);
+	uint16_t last_coil = first_coil + n_coils - 1;
+
+	if ((first_coil >= handler.data.num_coils) || (last_coil >= handler.data.num_coils))
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
+	}
 
 	handler.functions.read_coils(first_coil, n_coils);
+
+	return EXCEPTION_NONE;
 }
 
-static void handle_read_discrete_inputs(void const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_discrete_inputs(void const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.read_discrete_inputs) { return; }
+	if (!handler.functions.read_discrete_inputs) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t first_input = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_inputs = bytes_to_uint16_t((uint8_t*)data+2);
+	uint16_t last_input = first_input + n_inputs - 1;
+
+	if (first_input >= handler.data.num_inputs)
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
+	}
+
+	if (last_input >= handler.data.num_inputs)
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
+	}
 
 	handler.functions.read_discrete_inputs(first_input, n_inputs);
+
+	return EXCEPTION_NONE;
 }
 
 static bool on_off_data_is_valid(uint8_t * data)
@@ -114,124 +145,174 @@ static bool on_off_data_is_valid(uint8_t * data)
 	return valid_on_off_data;
 }
 
-static void handle_write_single_coil(void const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_single_coil(void const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.write_single_coil) { return; }
+	if (!handler.functions.write_single_coil) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-	if (!on_off_data_is_valid((uint8_t*)data + 2)) { return; }
+	if (!on_off_data_is_valid((uint8_t*)data + 2)) { return EXCEPTION_ILLEGAL_DATA_VALUE; }
 
 	uint16_t coil = bytes_to_uint16_t((uint8_t*)data);
+
+	if (coil >= handler.data.num_coils)
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;	
+	}
+
 	bool on = bytes_to_on_off_data((uint8_t*)data + 2);
 
 	handler.functions.write_single_coil(coil, on);
+	
+	return EXCEPTION_NONE;
+
 }
 
-static void handle_write_multiple_coils(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_multiple_coils(char const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.write_multiple_coils) { return; }
+	if (!handler.functions.write_multiple_coils) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t first_coil = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_coils = bytes_to_uint16_t((uint8_t*)data + 2);
-	uint8_t n_values = data[4];
-	
-	if (n_coils > handler.data.max_coils)
+	uint16_t last_coil = first_coil + n_coils - 1;
+
+	if ((first_coil >= handler.data.num_coils) || (last_coil >= handler.data.num_coils))
 	{
-		n_coils = handler.data.max_coils;
-		n_values = get_number_of_required_bytes_for_coils(n_coils);
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
 
-	copy_to_coils(n_coils, (uint8_t*)data + 5, handler.data.write_multiple_coils);
-	handler.functions.write_multiple_coils(first_coil, n_coils, n_values, handler.data.write_multiple_coils);
+	copy_to_multiple_coils(n_coils, (uint8_t*)data + 5, handler.data.write_multiple_coils);
+	handler.functions.write_multiple_coils(first_coil, n_coils, handler.data.write_multiple_coils);
+
+	return EXCEPTION_NONE;
 }
 
-static void handle_read_input_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_input_registers(char const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.read_input_registers) { return; }
+	if (!handler.functions.read_input_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-	uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
+	uint16_t first_reg = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_registers = bytes_to_uint16_t((uint8_t*)data+2);
+	uint16_t last_reg = first_reg + n_registers - 1;
+	
+	if ((first_reg >= handler.data.num_input_registers) || (last_reg >= handler.data.num_input_registers))
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
+	}
 
-	handler.functions.read_input_registers(reg, n_registers);
+	handler.functions.read_input_registers(first_reg, n_registers);
+
+	return EXCEPTION_NONE;
 }
 
-static void handle_read_holding_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_holding_registers(char const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.read_holding_registers) { return; }
+	if (!handler.functions.read_holding_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-	uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
+	uint16_t first_reg = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_registers = bytes_to_uint16_t((uint8_t*)data+2);
+	uint16_t last_reg = first_reg + n_registers - 1;
 
-	handler.functions.read_holding_registers(reg, n_registers);
+	if ((first_reg >= handler.data.num_holding_registers) || (last_reg >= handler.data.num_holding_registers))
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
+	}
+	
+	handler.functions.read_holding_registers(first_reg, n_registers);
+
+	return EXCEPTION_NONE;
 }
 
-static void handle_write_holding_register(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_holding_register(char const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.write_holding_register) { return; }
+	if (!handler.functions.write_holding_register) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
 	int16_t value = bytes_to_int16_t((uint8_t*)data+2);
 
+	if (reg >= handler.data.num_holding_registers)
+	{
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
+	}
+
 	handler.functions.write_holding_register(reg, value);
+
+	return EXCEPTION_NONE;
 }
 
-static void handle_write_holding_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_holding_registers(char const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.write_holding_registers) { return; }
+	if (!handler.functions.write_holding_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t first_reg = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_registers = bytes_to_int16_t((uint8_t*)data+2);
+	uint16_t last_reg = first_reg + n_registers - 1;
+
 	uint8_t n_values = ((uint8_t*)data)[4];
 	
-	if (n_registers > handler.data.max_holding_registers)
+	if (n_values != (n_registers * 2)) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
+
+	if ((first_reg >= handler.data.num_holding_registers || last_reg >= handler.data.num_holding_registers))
 	{
-		n_registers = handler.data.max_holding_registers;
-		n_values = n_registers * 2;
+		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
 
 	copy_to_holding_registers(n_registers, (uint8_t*)data + 5, handler.data.write_holding_registers);
 
-	handler.functions.write_holding_registers(first_reg, n_registers, n_values, handler.data.write_holding_registers);
+	handler.functions.write_holding_registers(first_reg, n_registers, handler.data.write_holding_registers);
+
+	return EXCEPTION_NONE;
 }
 
-static void handle_read_write_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_write_registers(char const * const data, const MODBUS_HANDLER& handler)
 {
-	if (!handler.functions.read_write_registers) { return; }
+	if (!handler.functions.read_write_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t read_start_reg = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t n_read_count = bytes_to_uint16_t((uint8_t*)data+2);
+	uint16_t read_end_reg = read_start_reg + n_read_count - 1;
+	
 	uint16_t write_start_reg = bytes_to_uint16_t((uint8_t*)data+4);
 	uint16_t n_write_count = bytes_to_uint16_t((uint8_t*)data+6);
+	uint16_t write_end_reg = write_start_reg + n_write_count - 1;
+	uint16_t write_byte_count = (uint16_t)data[8];
 
-	if (n_write_count > handler.data.max_holding_registers)
-	{
-		n_write_count = handler.data.max_holding_registers;
-	}
+	bool bad_addresses = false;
+	bool bad_write_byte_count = false;
 
-	copy_to_holding_registers(n_write_count, (uint8_t*)data + 8, handler.data.write_holding_registers);
+	bad_addresses |= (read_start_reg >= handler.data.num_holding_registers);
+	bad_addresses |= (read_end_reg >= handler.data.num_holding_registers);
+	bad_addresses |= (write_start_reg >= handler.data.num_holding_registers);
+	bad_addresses |= (write_end_reg >= handler.data.num_holding_registers);
+	
+	bad_write_byte_count = write_byte_count != (n_write_count * 2);
+
+	if (bad_addresses || bad_write_byte_count) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
+
+	copy_to_holding_registers(n_write_count, (uint8_t*)data + 9, handler.data.write_holding_registers);
 
 	handler.functions.read_write_registers(read_start_reg, n_read_count, write_start_reg, n_write_count, handler.data.write_holding_registers);
+
+	return EXCEPTION_NONE;
 }
 
 
-static void handle_mask_write_register(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_mask_write_register(char const * const data, const MODBUS_HANDLER& handler)
 {
-	(void)data;
-	if (!handler.functions.mask_write_register) { return; }
+	if (!handler.functions.mask_write_register) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
 	uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
 	uint16_t and_mask = bytes_to_uint16_t((uint8_t*)data + 2);
 	uint16_t or_mask = bytes_to_uint16_t((uint8_t*)data + 4);
 
+	if (reg >= handler.data.num_holding_registers) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
+	
 	handler.functions.mask_write_register(reg, and_mask, or_mask);
+
+	return EXCEPTION_NONE;
 }
+
 /*
  * Public Module Functions
  */
-
-void modbus_init(uint8_t address)
-{
-	s_this_address = address;
-}
 
 void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler)
 {
@@ -240,7 +321,7 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
 
 	if (!message) { return; }
 
-	if (get_message_address(message) != s_this_address) { return; }
+	if (get_message_address(message) != handler.data.device_address) { return; }
 
 	if (!is_valid_function_code(message[1])) { return; }
 
@@ -248,38 +329,46 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
 
 	char const * const data_start = &message[2];
 
+	MODBUS_EXCEPTION_CODES exception = EXCEPTION_ILLEGAL_FUNCTION_CODE;
+
 	switch(function_code)
 	{
 	case READ_COILS:
-		handle_read_coils(data_start, handler);
+		exception = handle_read_coils(data_start, handler);
 		break;
 	case READ_DISCRETE_INPUTS:
-		handle_read_discrete_inputs(data_start, handler);
+		exception = handle_read_discrete_inputs(data_start, handler);
 		break;
 	case WRITE_SINGLE_COIL:
-		handle_write_single_coil(data_start, handler);
+		exception = handle_write_single_coil(data_start, handler);
 		break;
 	case WRITE_MULTIPLE_COILS:
-		handle_write_multiple_coils(data_start, handler);
+		exception = handle_write_multiple_coils(data_start, handler);
 		break;
 	case READ_INPUT_REGISTERS:
-		handle_read_input_registers(data_start, handler);
+		exception = handle_read_input_registers(data_start, handler);
 		break;
 	case READ_HOLDING_REGISTERS:
-		handle_read_holding_registers(data_start, handler);
+		exception = handle_read_holding_registers(data_start, handler);
 		break;
 	case WRITE_HOLDING_REGISTER:
-		handle_write_holding_register(data_start, handler);
+		exception = handle_write_holding_register(data_start, handler);
 		break;
 	case WRITE_HOLDING_REGISTERS:
-		handle_write_holding_registers(data_start, handler);
+		exception = handle_write_holding_registers(data_start, handler);
 		break;
 	case READ_WRITE_REGISTERS:
-		handle_read_write_registers(data_start, handler);
+		exception = handle_read_write_registers(data_start, handler);
 		break;
 	case MASK_WRITE_REGISTER:
-		handle_mask_write_register(data_start, handler);
+		exception = handle_mask_write_register(data_start, handler);
 		break;
 	}
+
+	if ((exception != EXCEPTION_NONE) && (handler.functions.exception_handler))
+	{
+		handler.functions.exception_handler(function_code + 128, exception);	
+	}
+
 }
 

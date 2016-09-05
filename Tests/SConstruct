@@ -15,7 +15,7 @@ cppincludes = []
 
 for target in COMMAND_LINE_TARGETS:
 
-	test_object_paths = [src.format(target) for src in ["{}.test.cpp", "../{}.cpp"]]
+	test_object_paths = ["{}.test.cpp".format(target), "../modbus.cpp"]
 	
 	test_objects = [Object(test_object_path, CPPPATH=cpppath, CPPDEFINES=cppdefines, CPPFLAGS=cppflags) for test_object_path in test_object_paths]
 
