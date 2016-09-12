@@ -65,6 +65,26 @@ static bool bytes_to_on_off_data(uint8_t * bytes)
 	return bytes[0] == 0xFF;
 }
 
+static bool is_valid_coil_address(uint16_t coil_addr, const MODBUS_HANDLER& handler)
+{
+	return ((coil_addr > 0) && (coil_addr <= handler.data.num_coils));
+}
+
+static bool is_valid_input_register_addr(uint16_t input_register_addr, const MODBUS_HANDLER& handler)
+{
+	return ((input_register_addr > 0) && (input_register_addr <= handler.data.num_input_registers));
+}
+
+static bool is_valid_holding_register_addr(uint16_t holding_register_addr, const MODBUS_HANDLER& handler)
+{
+	return ((holding_register_addr > 0) && (holding_register_addr <= handler.data.num_holding_registers));
+}
+
+static bool is_valid_discrete_input_addr(uint16_t discrete_input_addr, const MODBUS_HANDLER& handler)
+{
+	return ((discrete_input_addr > 0) && (discrete_input_addr <= handler.data.num_inputs));
+}
+
 //static uint8_t get_number_of_required_bytes_for_coils(uint16_t n_coils)
 //{
 //	return (n_coils & 7) ? (n_coils / 8) + 1 : n_coils / 8;
@@ -104,7 +124,7 @@ static MODBUS_EXCEPTION_CODES handle_read_coils(void const * const data, const M
 	uint16_t n_coils = bytes_to_uint16_t((uint8_t*)data+2);
 	uint16_t last_coil = first_coil + n_coils - 1;
 
-	if ((first_coil >= handler.data.num_coils) || (last_coil >= handler.data.num_coils))
+	if (!is_valid_coil_address(first_coil, handler) || !is_valid_coil_address(last_coil, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -122,12 +142,7 @@ static MODBUS_EXCEPTION_CODES handle_read_discrete_inputs(void const * const dat
 	uint16_t n_inputs = bytes_to_uint16_t((uint8_t*)data+2);
 	uint16_t last_input = first_input + n_inputs - 1;
 
-	if (first_input >= handler.data.num_inputs)
-	{
-		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
-	}
-
-	if (last_input >= handler.data.num_inputs)
+	if (!is_valid_discrete_input_addr(first_input, handler) || !is_valid_discrete_input_addr(last_input, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -153,7 +168,7 @@ static MODBUS_EXCEPTION_CODES handle_write_single_coil(void const * const data, 
 
 	uint16_t coil = bytes_to_uint16_t((uint8_t*)data);
 
-	if (coil >= handler.data.num_coils)
+	if (!is_valid_coil_address(coil, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;	
 	}
@@ -174,7 +189,7 @@ static MODBUS_EXCEPTION_CODES handle_write_multiple_coils(char const * const dat
 	uint16_t n_coils = bytes_to_uint16_t((uint8_t*)data + 2);
 	uint16_t last_coil = first_coil + n_coils - 1;
 
-	if ((first_coil >= handler.data.num_coils) || (last_coil >= handler.data.num_coils))
+	if (!is_valid_coil_address(first_coil, handler) || !is_valid_coil_address(last_coil, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -193,7 +208,7 @@ static MODBUS_EXCEPTION_CODES handle_read_input_registers(char const * const dat
 	uint16_t n_registers = bytes_to_uint16_t((uint8_t*)data+2);
 	uint16_t last_reg = first_reg + n_registers - 1;
 	
-	if ((first_reg >= handler.data.num_input_registers) || (last_reg >= handler.data.num_input_registers))
+	if (!is_valid_input_register_addr(first_reg, handler) || !is_valid_input_register_addr(last_reg, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -211,7 +226,7 @@ static MODBUS_EXCEPTION_CODES handle_read_holding_registers(char const * const d
 	uint16_t n_registers = bytes_to_uint16_t((uint8_t*)data+2);
 	uint16_t last_reg = first_reg + n_registers - 1;
 
-	if ((first_reg >= handler.data.num_holding_registers) || (last_reg >= handler.data.num_holding_registers))
+	if (!is_valid_holding_register_addr(first_reg, handler) || !is_valid_holding_register_addr(last_reg, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -228,7 +243,7 @@ static MODBUS_EXCEPTION_CODES handle_write_holding_register(char const * const d
 	uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
 	int16_t value = bytes_to_int16_t((uint8_t*)data+2);
 
-	if (reg >= handler.data.num_holding_registers)
+	if (!is_valid_holding_register_addr(reg, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -250,7 +265,7 @@ static MODBUS_EXCEPTION_CODES handle_write_holding_registers(char const * const 
 	
 	if (n_values != (n_registers * 2)) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
 
-	if ((first_reg >= handler.data.num_holding_registers || last_reg >= handler.data.num_holding_registers))
+	if (!is_valid_holding_register_addr(first_reg, handler) || !is_valid_holding_register_addr(last_reg, handler))
 	{
 		return EXCEPTION_ILLEGAL_DATA_ADDRESS;
 	}
@@ -278,10 +293,10 @@ static MODBUS_EXCEPTION_CODES handle_read_write_registers(char const * const dat
 	bool bad_addresses = false;
 	bool bad_write_byte_count = false;
 
-	bad_addresses |= (read_start_reg >= handler.data.num_holding_registers);
-	bad_addresses |= (read_end_reg >= handler.data.num_holding_registers);
-	bad_addresses |= (write_start_reg >= handler.data.num_holding_registers);
-	bad_addresses |= (write_end_reg >= handler.data.num_holding_registers);
+	bad_addresses |= !is_valid_holding_register_addr(read_start_reg, handler);
+	bad_addresses |= !is_valid_holding_register_addr(read_end_reg, handler);
+	bad_addresses |= !is_valid_holding_register_addr(write_start_reg, handler);
+	bad_addresses |= !is_valid_holding_register_addr(write_end_reg, handler);
 	
 	bad_write_byte_count = write_byte_count != (n_write_count * 2);
 
@@ -303,7 +318,7 @@ static MODBUS_EXCEPTION_CODES handle_mask_write_register(char const * const data
 	uint16_t and_mask = bytes_to_uint16_t((uint8_t*)data + 2);
 	uint16_t or_mask = bytes_to_uint16_t((uint8_t*)data + 4);
 
-	if (reg >= handler.data.num_holding_registers) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
+	if (!is_valid_holding_register_addr(reg, handler)) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
 	
 	handler.functions.mask_write_register(reg, and_mask, or_mask);
 
