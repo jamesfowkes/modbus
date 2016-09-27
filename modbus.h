@@ -70,4 +70,12 @@ typedef struct modbus_handler MODBUS_HANDLER;
 
 void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler);
 
+int modbus_start_response(uint8_t * const buffer, MODBUS_FUNCTION_CODE function_code, uint8_t device_address);
+
+int modbus_write(uint8_t * const buffer, int8_t value);
+int modbus_write(uint8_t * const buffer, int16_t value);
+int modbus_write_crc(uint8_t * const buffer, uint8_t bytes);
+
+int get_number_of_required_bytes_for_number_of_bits(uint16_t n_bits);
+
 #endif
