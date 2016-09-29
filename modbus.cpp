@@ -15,6 +15,36 @@
  * Private Module Functions
  */
 
+static int get_number_of_required_bytes_for_number_of_bits(uint16_t n_bits)
+{
+  return (n_bits & 7) ? (n_bits / 8) + 1 : n_bits / 8;
+}
+
+static int modbus_write_read_discrete_inputs_response_data_bytes(uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs)
+{
+    int bool_count = 0;
+    int count = 0;
+
+    int required_bytes = get_number_of_required_bytes_for_number_of_bits(n_inputs);
+    buffer[count++] = (uint8_t)required_bytes;
+
+    for (int b = 0; b < required_bytes; b++)
+    {
+        buffer[count] = 0x00;
+
+        for (int i = 0; i < 7; i++)
+        {
+            buffer[count] |= discrete_inputs[bool_count] ? (1 << i) : 0;
+            bool_count++;
+            if(bool_count == n_inputs) { break; }
+        }
+
+        count++;
+    }
+
+    return count;
+}
+
 static uint16_t bytes_to_uint16_t(uint8_t * bytes)
 {
     return (bytes[0] << 8) + bytes[1];
@@ -36,7 +66,7 @@ static void copy_to_holding_registers(uint16_t n_registers, uint8_t * data, int1
 
 static void copy_byte_to_coils(uint8_t data, uint16_t n_coils, bool * coils)
 {
-    uint8_t i = 1;
+    int8_t i = 1;
     int8_t coil = 0;
     n_coils = (n_coils <= 8) ? n_coils : 8; 
 
@@ -83,11 +113,6 @@ static bool is_valid_holding_register_addr(uint16_t holding_register_addr, const
 static bool is_valid_discrete_input_addr(uint16_t discrete_input_addr, const MODBUS_HANDLER& handler)
 {
     return ((discrete_input_addr > 0) && (discrete_input_addr <= handler.data.num_inputs));
-}
-
-int get_number_of_required_bytes_for_number_of_bits(uint16_t n_bits)
-{
-  return (n_bits & 7) ? (n_bits / 8) + 1 : n_bits / 8;
 }
 
 static bool is_valid_function_code(uint8_t code)
@@ -449,4 +474,29 @@ int modbus_write_crc(uint8_t * const buffer, uint8_t bytes)
     buffer[bytes] = crc_bytes[1];
     buffer[bytes+1] = crc_bytes[0];
     return 2;
+}
+
+int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], READ_DISCRETE_INPUTS, source_address);
+    count += modbus_write_read_discrete_inputs_response_data_bytes(&buffer[count], discrete_inputs, n_inputs);
+    count += modbus_write_crc(buffer, count);
+    return count;
+}
+
+int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], READ_INPUT_REGISTERS, source_address);
+    count += modbus_write(&buffer[count], (int8_t)n_registers);
+    
+    for (int i = 0; i < n_registers; i++)
+    {
+        count += modbus_write(&buffer[count], (int16_t)input_registers[i]);
+    }
+
+    count += modbus_write_crc(buffer, count);
+
+    return count;
 }

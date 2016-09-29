@@ -75,7 +75,7 @@ int modbus_start_response(uint8_t * const buffer, MODBUS_FUNCTION_CODE function_
 int modbus_write(uint8_t * const buffer, int8_t value);
 int modbus_write(uint8_t * const buffer, int16_t value);
 int modbus_write_crc(uint8_t * const buffer, uint8_t bytes);
-
-int get_number_of_required_bytes_for_number_of_bits(uint16_t n_bits);
+int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs);
+int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers);
 
 #endif
