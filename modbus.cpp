@@ -15,6 +15,31 @@
  * Private Module Functions
  */
 
+static uint16_t get_crc16(uint8_t * buffer, uint8_t number_of_bytes)
+{
+    uint16_t crc = 0xFFFF;
+ 
+    for (int pos = 0; pos < number_of_bytes; pos++)
+    {
+        crc ^= (uint16_t)buffer[pos];
+ 
+        for (uint8_t i = 8; i != 0; i--)
+        {
+            if ((crc & 0x0001) != 0)
+            {
+                crc >>= 1;
+                crc ^= 0xA001;
+            }
+            else
+            {
+              crc >>= 1;
+            }
+        }
+
+    }
+    return crc;
+}
+
 static int get_number_of_required_bytes_for_number_of_bits(uint16_t n_bits)
 {
   return (n_bits & 7) ? (n_bits / 8) + 1 : n_bits / 8;
@@ -350,38 +375,21 @@ static MODBUS_EXCEPTION_CODES handle_mask_write_register(char const * const data
     return EXCEPTION_NONE;
 }
 
-uint16_t get_crc16(uint8_t * buffer, uint8_t number_of_bytes)
+static bool validate_message_crc(const char * message, int message_length)
 {
-    uint16_t crc = 0xFFFF;
- 
-    for (int pos = 0; pos < number_of_bytes; pos++)
-    {
-        crc ^= (uint16_t)buffer[pos];
- 
-        for (uint8_t i = 8; i != 0; i--)
-        {
-            if ((crc & 0x0001) != 0)
-            {
-                crc >>= 1;
-                crc ^= 0xA001;
-            }
-            else
-            {
-              crc >>= 1;
-            }
-        }
-
-    }
-    return crc;
+    bool valid_crc = true;
+    uint16_t expected_crc = get_crc16((uint8_t *)message, message_length - 2);
+    valid_crc &= message[message_length-2] == (char)(expected_crc >> 8);
+    valid_crc &= message[message_length-1] == (char)(expected_crc & 0xFF);
+    return valid_crc;
 }
 
 /*
  * Public Module Functions
  */
 
-void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler)
-{
-    
+void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler, int message_length, bool check_crc)
+{       
     MODBUS_FUNCTION_CODE function_code;
 
     if (!message) { return; }
@@ -390,12 +398,13 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
 
     if (!is_valid_function_code(message[1])) { return; }
 
+    if (check_crc && !validate_message_crc(message, message_length)) { return; }
+
     function_code = get_message_function_code(message);
 
     char const * const data_start = &message[2];
 
     MODBUS_EXCEPTION_CODES exception = EXCEPTION_ILLEGAL_FUNCTION_CODE;
-
 
     switch(function_code)
     {
@@ -476,16 +485,21 @@ int modbus_write_crc(uint8_t * const buffer, uint8_t bytes)
     return 2;
 }
 
-int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs)
+int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs, bool add_crc)
 {
     int count = 0;
     count += modbus_start_response(&buffer[count], READ_DISCRETE_INPUTS, source_address);
     count += modbus_write_read_discrete_inputs_response_data_bytes(&buffer[count], discrete_inputs, n_inputs);
-    count += modbus_write_crc(buffer, count);
+    
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
+    
     return count;
 }
 
-int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers)
+int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers, bool add_crc)
 {
     int count = 0;
     count += modbus_start_response(&buffer[count], READ_INPUT_REGISTERS, source_address);
@@ -496,7 +510,10 @@ int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t *
         count += modbus_write(&buffer[count], (int16_t)input_registers[i]);
     }
 
-    count += modbus_write_crc(buffer, count);
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
 
     return count;
 }

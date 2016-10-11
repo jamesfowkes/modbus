@@ -112,6 +112,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	CPPUNIT_TEST(test_service_with_no_message_does_not_call_any_functions);
 	CPPUNIT_TEST(test_service_with_wrong_address_does_not_call_any_functions);
+	CPPUNIT_TEST(test_service_with_check_crc_enabled_does_not_handle_message_with_invalid_crc);
+	CPPUNIT_TEST(test_service_with_check_crc_enabled_handles_message_with_valid_crc);
+
 	CPPUNIT_TEST(test_service_with_read_coils_message);
 	CPPUNIT_TEST(test_service_with_read_discrete_inputs_message);
 	CPPUNIT_TEST(test_service_with_valid_write_single_coil_message);
@@ -131,21 +134,39 @@ class ModbusTest : public CppUnit::TestFixture  {
 	void test_service_with_no_message_does_not_call_any_functions()
 	{
 		char message[] = {(char)0xAB};
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL(0, s_last_function_code);
 	}
 
 	void test_service_with_wrong_address_does_not_call_any_functions()
 	{
-		modbus_service_message(NULL, s_modbus_handler);
+		modbus_service_message(NULL, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL(0, s_last_function_code);
+	}
+
+	void test_service_with_check_crc_enabled_does_not_handle_message_with_invalid_crc()
+	{
+		char message[] = {(char)0xAA, (char)READ_COILS, (char)0x00, (char)0x01, (char)0x00, (char)NUMBER_OF_COILS, (char)(0x13), (char)(0xF3)};
+
+		modbus_service_message(message, s_modbus_handler, 8, true);
+		CPPUNIT_ASSERT_EQUAL(0, s_last_function_code);
+	}
+
+	void test_service_with_check_crc_enabled_handles_message_with_valid_crc()
+	{
+		char message[] = {(char)0xAA, (char)READ_COILS, (char)0x00, (char)0x01, (char)0x00, (char)NUMBER_OF_COILS, (char)(0x13), (char)(0xF4)};
+
+		modbus_service_message(message, s_modbus_handler, 8, true);
+		CPPUNIT_ASSERT_EQUAL((int)READ_COILS, s_last_function_code);
+		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_read_coils_data.first_coil);
+		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_COILS, s_read_coils_data.n_coils);
 	}
 
 	void test_service_with_read_coils_message()
 	{
 		char message[] = {(char)0xAA, (char)READ_COILS, (char)0x00, (char)0x01, (char)0x00, (char)NUMBER_OF_COILS};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_COILS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_read_coils_data.first_coil);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_COILS, s_read_coils_data.n_coils);
@@ -155,7 +176,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 	{
 		char message[] = {(char)0xAA, (char)READ_DISCRETE_INPUTS, (char)0x00, (char)0x01, (char)0x00, (char)NUMBER_OF_INPUTS};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_DISCRETE_INPUTS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_read_discrete_inputs_data.first_input);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_INPUTS, s_read_discrete_inputs_data.n_inputs);
@@ -165,7 +186,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 	{
 		char message[] = {(char)0xAA, (char)WRITE_SINGLE_COIL, (char)0x00, (char)0x04, (char)0xFF, (char)0x00};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_SINGLE_COIL, s_last_function_code);
 
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0004, s_write_single_coil_data.coil);
@@ -181,7 +202,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 			(char)0x01,
 			(char)0b00000101};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_MULTIPLE_COILS, s_last_function_code);
 
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_write_multiple_coils_data.first_coil);
@@ -195,7 +216,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 	{
 		char message[] = {(char)0xAA, (char)READ_INPUT_REGISTERS, (char)0x00, (char)0x01, (char)0x00, (char)NUMBER_OF_INPUT_REGISTERS};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_INPUT_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_read_input_registers_data.reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_INPUT_REGISTERS, s_read_input_registers_data.n_registers);
@@ -205,7 +226,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 	{
 		char message[] = {(char)0xAA, (char)READ_HOLDING_REGISTERS, (char)0x00, (char)0x01, (char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_HOLDING_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_read_holding_registers_data.reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_HOLDING_REGISTERS, s_read_holding_registers_data.n_registers);
@@ -215,7 +236,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 	{
 		char message[] = {(char)0xAA, (char)WRITE_HOLDING_REGISTER, (char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS-1, (char)0x01, (char)0x43};
 		
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_HOLDING_REGISTER, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)(NUMBER_OF_HOLDING_REGISTERS-1), s_write_holding_register_data.reg);
 		CPPUNIT_ASSERT_EQUAL((int16_t)0x0143, s_write_holding_register_data.value);
@@ -236,7 +257,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 			(char)0x82, (char)0xC3,
 		};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_HOLDING_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_write_holding_registers_data.first_reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_HOLDING_REGISTERS, s_write_holding_registers_data.n_registers);
@@ -258,7 +279,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 			(char)0x00, (char)0x50,
 		};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_HOLDING_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_HOLDING_REGISTERS, s_write_holding_registers_data.first_reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x01, s_write_holding_registers_data.n_registers);
@@ -282,7 +303,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 			(char)0xF0, (char)0x05,
 		};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		
 		CPPUNIT_ASSERT_EQUAL((int)READ_WRITE_REGISTERS, s_last_function_code);
 	
@@ -308,7 +329,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 			(char)0x00, (char)0x7F,
 		};
 
-		modbus_service_message(message, s_modbus_handler);
+		modbus_service_message(message, s_modbus_handler, 0, false);
 		CPPUNIT_ASSERT_EQUAL((int)MASK_WRITE_REGISTER, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)(NUMBER_OF_HOLDING_REGISTERS-1), s_mask_write_register_data.reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x03FF, s_mask_write_register_data.and_mask);

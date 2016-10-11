@@ -65,17 +65,18 @@ struct modbus_handler
 {
 	struct modbus_handler_functions functions;
 	struct modbus_handler_data data;
+	bool add_response_crc;
 };
 typedef struct modbus_handler MODBUS_HANDLER;
 
-void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler);
+void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler, int message_length, bool check_crc);
 
 int modbus_start_response(uint8_t * const buffer, MODBUS_FUNCTION_CODE function_code, uint8_t device_address);
 
 int modbus_write(uint8_t * const buffer, int8_t value);
 int modbus_write(uint8_t * const buffer, int16_t value);
 int modbus_write_crc(uint8_t * const buffer, uint8_t bytes);
-int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs);
-int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers);
+int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs, bool add_crc=true);
+int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers, bool add_crc=true);
 
 #endif
