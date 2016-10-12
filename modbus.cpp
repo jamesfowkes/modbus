@@ -91,8 +91,8 @@ static void copy_to_holding_registers(uint16_t n_registers, uint8_t * data, int1
 
 static void copy_byte_to_coils(uint8_t data, uint16_t n_coils, bool * coils)
 {
-    int8_t i = 1;
-    int8_t coil = 0;
+    uint8_t i = 1;
+    uint8_t coil = 0;
     n_coils = (n_coils <= 8) ? n_coils : 8; 
 
     for(i = 1; coil < n_coils; i <<= 1)
