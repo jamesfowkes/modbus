@@ -517,3 +517,18 @@ int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t *
 
     return count;
 }
+
+int modbus_get_write_single_coil_response(uint8_t source_address, uint8_t * buffer, uint16_t coil, bool on, bool add_crc)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], WRITE_SINGLE_COIL, source_address);
+    count += modbus_write(&buffer[count], (int16_t)coil);
+    count += modbus_write(&buffer[count], on ? (int16_t)0xFF00 : (int16_t)0x0000);
+
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
+
+    return count;
+}
