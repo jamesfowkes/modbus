@@ -31,6 +31,14 @@ class ModbusResponseTest : public CppUnit::TestFixture  {
 	CPPUNIT_TEST(test_modbus_write_read_input_registers_start_not_1_read_one);
 	CPPUNIT_TEST(test_modbus_write_read_input_registers_start_1_read_one);
 
+	CPPUNIT_TEST(test_modbus_write_read_holding_registers_start_1_read_many);
+	CPPUNIT_TEST(test_modbus_write_read_holding_registers_start_not_1_read_many);
+	CPPUNIT_TEST(test_modbus_write_read_holding_registers_start_not_1_read_one);
+	CPPUNIT_TEST(test_modbus_write_read_holding_registers_start_1_read_one);
+
+	CPPUNIT_TEST(test_modbus_get_write_holding_register_response);
+	CPPUNIT_TEST(test_modbus_get_write_holding_registers_response);
+
 	CPPUNIT_TEST(test_modbus_write_crc);
 
 	CPPUNIT_TEST_SUITE_END();
@@ -203,6 +211,87 @@ class ModbusResponseTest : public CppUnit::TestFixture  {
 		CPPUNIT_ASSERT_EQUAL((uint8_t)READ_INPUT_REGISTERS, buffer[1]);
 		CPPUNIT_ASSERT_EQUAL((uint8_t)1, buffer[2]);
 		CPPUNIT_ASSERT_EQUAL((int16_t)0x0000, two_bytes_to_int16_t(buffer[3], buffer[4]));
+	}
+
+	void test_modbus_write_read_holding_registers_start_1_read_many()
+	{
+		int16_t test_values[] = {0x0000, 0x7FFF, 0x5555, 0x1111};
+
+		uint8_t buffer[64];
+		int bytes_written = modbus_write_read_holding_registers_response(TEST_ADDRESS, buffer, test_values, 4);
+		CPPUNIT_ASSERT_EQUAL(13, bytes_written);
+		CPPUNIT_ASSERT_EQUAL(TEST_ADDRESS, buffer[0]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)READ_HOLDING_REGISTERS, buffer[1]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)4, buffer[2]);
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x0000, two_bytes_to_int16_t(buffer[3], buffer[4]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x7FFF, two_bytes_to_int16_t(buffer[5], buffer[6]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x5555, two_bytes_to_int16_t(buffer[7], buffer[8]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x1111, two_bytes_to_int16_t(buffer[9], buffer[10]));
+	}
+
+	void test_modbus_write_read_holding_registers_start_not_1_read_many()
+	{
+		int16_t test_values[] = {0x0000, 0x7FFF, 0x5555, 0x1111};
+
+		uint8_t buffer[64];
+		int bytes_written = modbus_write_read_holding_registers_response(TEST_ADDRESS, buffer, test_values + 1, 3);
+		CPPUNIT_ASSERT_EQUAL(11, bytes_written);
+		CPPUNIT_ASSERT_EQUAL(TEST_ADDRESS, buffer[0]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)READ_HOLDING_REGISTERS, buffer[1]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)3, buffer[2]);
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x7FFF, two_bytes_to_int16_t(buffer[3], buffer[4]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x5555, two_bytes_to_int16_t(buffer[5], buffer[6]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x1111, two_bytes_to_int16_t(buffer[7], buffer[8]));
+	}
+
+	void test_modbus_write_read_holding_registers_start_not_1_read_one()
+	{
+		int16_t test_values[] = {0x0000, 0x7FFF, 0x5555, 0x1111};
+
+		uint8_t buffer[64];
+		int bytes_written = modbus_write_read_holding_registers_response(TEST_ADDRESS, buffer, test_values + 2, 1);
+		CPPUNIT_ASSERT_EQUAL(7, bytes_written);
+		CPPUNIT_ASSERT_EQUAL(TEST_ADDRESS, buffer[0]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)READ_HOLDING_REGISTERS, buffer[1]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)1, buffer[2]);
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x5555, two_bytes_to_int16_t(buffer[3], buffer[4]));
+	}
+
+	void test_modbus_write_read_holding_registers_start_1_read_one()
+	{
+		int16_t test_values[] = {0x0000, 0x7FFF, 0x5555, 0x1111};
+
+		uint8_t buffer[64];
+		int bytes_written = modbus_write_read_holding_registers_response(TEST_ADDRESS, buffer, test_values, 1);
+		CPPUNIT_ASSERT_EQUAL(7, bytes_written);
+		CPPUNIT_ASSERT_EQUAL(TEST_ADDRESS, buffer[0]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)READ_HOLDING_REGISTERS, buffer[1]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)1, buffer[2]);
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x0000, two_bytes_to_int16_t(buffer[3], buffer[4]));
+	}
+
+	void test_modbus_get_write_holding_register_response()
+	{
+		uint8_t buffer[64];
+		int bytes_written = modbus_get_write_holding_register_response(TEST_ADDRESS, buffer, 1, 0x1234);
+
+		CPPUNIT_ASSERT_EQUAL(8, bytes_written);
+		CPPUNIT_ASSERT_EQUAL(TEST_ADDRESS, buffer[0]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)WRITE_HOLDING_REGISTER, buffer[1]);
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x0001, two_bytes_to_int16_t(buffer[2], buffer[3]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x1234, two_bytes_to_int16_t(buffer[4], buffer[5]));
+	}
+
+	void test_modbus_get_write_holding_registers_response()
+	{
+		uint8_t buffer[64];
+		int bytes_written = modbus_get_write_holding_registers_response(TEST_ADDRESS, buffer, 2, 5);
+
+		CPPUNIT_ASSERT_EQUAL(8, bytes_written);
+		CPPUNIT_ASSERT_EQUAL(TEST_ADDRESS, buffer[0]);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)WRITE_HOLDING_REGISTERS, buffer[1]);
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x0002, two_bytes_to_int16_t(buffer[2], buffer[3]));
+		CPPUNIT_ASSERT_EQUAL((int16_t)0x0005, two_bytes_to_int16_t(buffer[4], buffer[5]));
 	}
 
 	void test_modbus_write_crc()
