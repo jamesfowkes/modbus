@@ -398,7 +398,14 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
 
     if (!is_valid_function_code(message[1])) { return; }
 
-    if (check_crc && !validate_message_crc(message, message_length)) { return; }
+    if (check_crc && !validate_message_crc(message, message_length))
+    {
+        if (handler.functions.exception_handler)
+        {
+            handler.functions.exception_handler(message[1], EXCEPTION_INVALID_CRC);
+        }
+        return;
+    }
 
     function_code = get_message_function_code(message);
 
@@ -518,12 +525,61 @@ int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t *
     return count;
 }
 
+int modbus_write_read_holding_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * holding_registers, uint8_t n_registers, bool add_crc)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], READ_HOLDING_REGISTERS, source_address);
+    count += modbus_write(&buffer[count], (int8_t)n_registers);
+    
+    for (int i = 0; i < n_registers; i++)
+    {
+        count += modbus_write(&buffer[count], (int16_t)holding_registers[i]);
+    }
+
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
+
+    return count;
+}
+
 int modbus_get_write_single_coil_response(uint8_t source_address, uint8_t * buffer, uint16_t coil, bool on, bool add_crc)
 {
     int count = 0;
     count += modbus_start_response(&buffer[count], WRITE_SINGLE_COIL, source_address);
     count += modbus_write(&buffer[count], (int16_t)coil);
     count += modbus_write(&buffer[count], on ? (int16_t)0xFF00 : (int16_t)0x0000);
+
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
+
+    return count;
+}
+
+int modbus_get_write_holding_register_response(uint8_t source_address, uint8_t * buffer, uint16_t reg, int16_t value, bool add_crc)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], WRITE_HOLDING_REGISTER, source_address);
+    count += modbus_write(&buffer[count], (int16_t)reg);
+    count += modbus_write(&buffer[count], (int16_t)value);
+
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
+
+    return count;
+}
+
+int modbus_get_write_holding_registers_response(uint8_t source_address, uint8_t * buffer, uint16_t reg, uint16_t n_registers, bool add_crc)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], WRITE_HOLDING_REGISTERS, source_address);
+    count += modbus_write(&buffer[count], (int16_t)reg);
+    count += modbus_write(&buffer[count], (int16_t)n_registers);
 
     if (add_crc)
     {
