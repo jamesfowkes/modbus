@@ -1,6 +1,8 @@
 #ifndef _MODBUS_H_
 #define _MODBUS_H_
 
+static const uint8_t MODBUS_BROADCAST_ADDRESS = 0x00;
+
 enum modbus_function_code
 {
 	READ_COILS = 1,
