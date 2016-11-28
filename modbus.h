@@ -35,6 +35,14 @@ enum modbus_exception_codes
 };
 typedef enum modbus_exception_codes MODBUS_EXCEPTION_CODES;
 
+enum crc_check_state
+{
+	CRC_PASSED,
+	CRC_FAILED,
+	CRC_NOT_CHECKED
+};
+typedef enum crc_check_state CRC_CHECK_STATE;
+
 struct modbus_handler_functions
 {
 	void (*read_coils)(uint16_t first_coil, uint16_t n_coils);
@@ -78,12 +86,14 @@ int modbus_start_response(uint8_t * const buffer, MODBUS_FUNCTION_CODE function_
 
 int modbus_write(uint8_t * const buffer, int8_t value);
 int modbus_write(uint8_t * const buffer, int16_t value);
-int modbus_write_crc(uint8_t * const buffer, uint8_t bytes);
+int modbus_write_crc(uint8_t * const buffer, uint8_t bytes, bool reverse_order=false);
 int modbus_write_read_discrete_inputs_response(uint8_t source_address, uint8_t * buffer, bool * discrete_inputs, uint8_t n_inputs, bool add_crc=true);
 int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * input_registers, uint8_t n_registers, bool add_crc=true);
 int modbus_write_read_holding_registers_response(uint8_t source_address, uint8_t * buffer, int16_t * holding_registers, uint8_t n_registers, bool add_crc=true);
 int modbus_get_write_single_coil_response(uint8_t source_address, uint8_t * buffer, uint16_t coil, bool on, bool add_crc=true);
 int modbus_get_write_holding_register_response(uint8_t source_address, uint8_t * buffer, uint16_t reg, int16_t value, bool add_crc=true);
 int modbus_get_write_holding_registers_response(uint8_t source_address, uint8_t * buffer, uint16_t reg, uint16_t n_registers, bool add_crc=true);
+
+int modbus_write_exception(uint8_t source_address, uint8_t * const buffer, MODBUS_EXCEPTION_CODES exception_code, uint8_t modified_function_code, bool add_crc=true);
 
 #endif

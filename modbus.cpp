@@ -15,6 +15,14 @@
  * Private Module Functions
  */
 
+CRC_CHECK_STATE application_check_crc(const char * message, int message_length, bool reverse_order = false);
+
+#ifndef ALLOW_APPLICATION_CRC_CHECKS
+
+#define application_check_crc(message, message_length, reverse_order) (CRC_NOT_CHECKED)
+
+#endif
+
 static uint16_t get_crc16(uint8_t * buffer, uint8_t number_of_bytes)
 {
     uint16_t crc = 0xFFFF;
@@ -375,12 +383,23 @@ static MODBUS_EXCEPTION_CODES handle_mask_write_register(char const * const data
     return EXCEPTION_NONE;
 }
 
-static bool validate_message_crc(const char * message, int message_length)
+static bool validate_message_crc(const char * message, int message_length, bool reverse_order = false)
 {
     bool valid_crc = true;
+
+    if (application_check_crc(message, message_length, reverse_order) == CRC_PASSED) { return true; }
+
+    char expected_hi;
+    char expected_lo;
+    
     uint16_t expected_crc = get_crc16((uint8_t *)message, message_length - 2);
-    valid_crc &= message[message_length-2] == (char)(expected_crc >> 8);
-    valid_crc &= message[message_length-1] == (char)(expected_crc & 0xFF);
+    
+    expected_hi = reverse_order ? (char)(expected_crc & 0xFF) : (char)(expected_crc >> 8);
+    expected_lo = reverse_order ? (char)(expected_crc >> 8) : (char)(expected_crc & 0xFF);
+    
+    valid_crc &= message[message_length-1] == expected_hi;
+    valid_crc &= message[message_length-2] == expected_lo;
+    
     return valid_crc;
 }
 
@@ -393,16 +412,13 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
     MODBUS_FUNCTION_CODE function_code;
 
     if (!message) { return; }
-
-    if (get_message_address(message) != handler.data.device_address) { return; }
-
+    if ((get_message_address(message) != MODBUS_BROADCAST_ADDRESS) && (get_message_address(message) != handler.data.device_address)) { return; }
     if (!is_valid_function_code(message[1])) { return; }
-
     if (check_crc && !validate_message_crc(message, message_length))
     {
         if (handler.functions.exception_handler)
         {
-            handler.functions.exception_handler(message[1], EXCEPTION_INVALID_CRC);
+            handler.functions.exception_handler(message[1]+128, EXCEPTION_INVALID_CRC);
         }
         return;
     }
@@ -445,6 +461,8 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
     case MASK_WRITE_REGISTER:
         exception = handle_mask_write_register(data_start, handler);
         break;
+    default:
+        break;
     }
 
     if ((exception != EXCEPTION_NONE) && (handler.functions.exception_handler))
@@ -483,12 +501,12 @@ int modbus_write(uint8_t * const buffer, int16_t value)
     return 2;
 }
 
-int modbus_write_crc(uint8_t * const buffer, uint8_t bytes)
+int modbus_write_crc(uint8_t * const buffer, uint8_t bytes, bool reverse_order)
 {
     uint16_t crc = get_crc16(buffer, bytes);
     uint8_t * crc_bytes = (uint8_t *)&crc;
-    buffer[bytes] = crc_bytes[1];
-    buffer[bytes+1] = crc_bytes[0];
+    buffer[bytes] = crc_bytes[reverse_order ? 1 : 0];
+    buffer[bytes+1] = crc_bytes[reverse_order ? 0 : 1];
     return 2;
 }
 
@@ -510,7 +528,7 @@ int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t *
 {
     int count = 0;
     count += modbus_start_response(&buffer[count], READ_INPUT_REGISTERS, source_address);
-    count += modbus_write(&buffer[count], (int8_t)n_registers);
+    count += modbus_write(&buffer[count], (int8_t)(n_registers*2));
     
     for (int i = 0; i < n_registers; i++)
     {
@@ -580,6 +598,20 @@ int modbus_get_write_holding_registers_response(uint8_t source_address, uint8_t 
     count += modbus_start_response(&buffer[count], WRITE_HOLDING_REGISTERS, source_address);
     count += modbus_write(&buffer[count], (int16_t)reg);
     count += modbus_write(&buffer[count], (int16_t)n_registers);
+
+    if (add_crc)
+    {
+        count += modbus_write_crc(buffer, count);
+    }
+
+    return count;
+}
+
+int modbus_write_exception(uint8_t source_address, uint8_t * const buffer, MODBUS_EXCEPTION_CODES exception_code, uint8_t modified_function_code, bool add_crc)
+{
+    int count = 0;
+    count += modbus_start_response(&buffer[count], (MODBUS_FUNCTION_CODE)modified_function_code, source_address);
+    count += modbus_write(&buffer[count], (int8_t)exception_code);
 
     if (add_crc)
     {
