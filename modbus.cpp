@@ -122,22 +122,22 @@ static bool bytes_to_on_off_data(uint8_t * bytes)
 
 static bool is_valid_coil_address(uint16_t coil_addr, const MODBUS_HANDLER& handler)
 {
-    return ((coil_addr > 0) && (coil_addr <= handler.data.num_coils));
+    return (coil_addr < handler.data.num_coils);
 }
 
 static bool is_valid_input_register_addr(uint16_t input_register_addr, const MODBUS_HANDLER& handler)
 {
-    return ((input_register_addr > 0) && (input_register_addr <= handler.data.num_input_registers));
+    return (input_register_addr < handler.data.num_input_registers);
 }
 
 static bool is_valid_holding_register_addr(uint16_t holding_register_addr, const MODBUS_HANDLER& handler)
 {
-    return ((holding_register_addr > 0) && (holding_register_addr <= handler.data.num_holding_registers));
+    return (holding_register_addr < handler.data.num_holding_registers);
 }
 
 static bool is_valid_discrete_input_addr(uint16_t discrete_input_addr, const MODBUS_HANDLER& handler)
 {
-    return ((discrete_input_addr > 0) && (discrete_input_addr <= handler.data.num_inputs));
+    return (discrete_input_addr < handler.data.num_inputs);
 }
 
 static bool is_valid_function_code(uint8_t code)
@@ -312,7 +312,7 @@ static MODBUS_EXCEPTION_CODES handle_write_holding_registers(char const * const 
     uint16_t last_reg = first_reg + n_registers - 1;
 
     uint8_t n_values = ((uint8_t*)data)[4];
-    
+
     if (n_values != (n_registers * 2)) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
 
     if (!is_valid_holding_register_addr(first_reg, handler) || !is_valid_holding_register_addr(last_reg, handler))
@@ -510,7 +510,7 @@ int modbus_write_read_input_registers_response(uint8_t source_address, uint8_t *
 {
     int count = 0;
     count += modbus_start_response(&buffer[count], READ_INPUT_REGISTERS, source_address);
-    count += modbus_write(&buffer[count], (int8_t)n_registers);
+    count += modbus_write(&buffer[count], (int8_t)(n_registers*2));
     
     for (int i = 0; i < n_registers; i++)
     {
@@ -529,7 +529,7 @@ int modbus_write_read_holding_registers_response(uint8_t source_address, uint8_t
 {
     int count = 0;
     count += modbus_start_response(&buffer[count], READ_HOLDING_REGISTERS, source_address);
-    count += modbus_write(&buffer[count], (int8_t)n_registers);
+    count += modbus_write(&buffer[count], (int8_t)(n_registers*2));
     
     for (int i = 0; i < n_registers; i++)
     {
