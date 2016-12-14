@@ -80,7 +80,7 @@ struct modbus_handler
 };
 typedef struct modbus_handler MODBUS_HANDLER;
 
-void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler, int message_length, bool check_crc);
+void modbus_service_message(uint8_t const * const message, const MODBUS_HANDLER& handler, int message_length, bool check_crc);
 
 int modbus_start_response(uint8_t * const buffer, MODBUS_FUNCTION_CODE function_code, uint8_t device_address);
 
@@ -95,5 +95,12 @@ int modbus_get_write_holding_register_response(uint8_t source_address, uint8_t *
 int modbus_get_write_holding_registers_response(uint8_t source_address, uint8_t * buffer, uint16_t reg, uint16_t n_registers, bool add_crc=true);
 
 int modbus_write_exception(uint8_t source_address, uint8_t * const buffer, MODBUS_EXCEPTION_CODES exception_code, uint8_t modified_function_code, bool add_crc=true);
+
+uint16_t modbus_get_crc16(uint8_t const * const buffer, uint8_t number_of_bytes);
+bool modbus_validate_message_crc(const uint8_t * message, int message_length, bool reverse_order = false);
+
+uint8_t const * modbus_get_current_message();
+uint8_t modbus_get_current_message_address();
+int modbus_get_current_message_length();
 
 #endif

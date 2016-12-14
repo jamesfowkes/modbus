@@ -3,7 +3,10 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdbool.h>
+
+//#include <iostream>
 
 /*
  * Modbus Library Includes
@@ -12,41 +15,23 @@
 #include "modbus.h"
 
 /*
+ * Private Module Data
+ */
+
+static uint8_t const * s_current_message = NULL;
+static int s_current_message_length = 0;
+
+/*
  * Private Module Functions
  */
 
-CRC_CHECK_STATE application_check_crc(const char * message, int message_length, bool reverse_order = false);
+CRC_CHECK_STATE application_check_crc(const uint8_t * message, int message_length, bool reverse_order = false);
 
 #ifndef ALLOW_APPLICATION_CRC_CHECKS
 
 #define application_check_crc(message, message_length, reverse_order) (CRC_NOT_CHECKED)
 
 #endif
-
-static uint16_t get_crc16(uint8_t * buffer, uint8_t number_of_bytes)
-{
-    uint16_t crc = 0xFFFF;
- 
-    for (int pos = 0; pos < number_of_bytes; pos++)
-    {
-        crc ^= (uint16_t)buffer[pos];
- 
-        for (uint8_t i = 8; i != 0; i--)
-        {
-            if ((crc & 0x0001) != 0)
-            {
-                crc >>= 1;
-                crc ^= 0xA001;
-            }
-            else
-            {
-              crc >>= 1;
-            }
-        }
-
-    }
-    return crc;
-}
 
 static int get_number_of_required_bytes_for_number_of_bits(uint16_t n_bits)
 {
@@ -78,17 +63,17 @@ static int modbus_write_read_discrete_inputs_response_data_bytes(uint8_t * buffe
     return count;
 }
 
-static uint16_t bytes_to_uint16_t(uint8_t * bytes)
+static uint16_t bytes_to_uint16_t(uint8_t const * const bytes)
 {
     return (bytes[0] << 8) + bytes[1];
 }
 
-static int16_t bytes_to_int16_t(uint8_t * bytes)
+static int16_t bytes_to_int16_t(uint8_t const * const bytes)
 {
     return (bytes[0] << 8) + bytes[1];
 }
 
-static void copy_to_holding_registers(uint16_t n_registers, uint8_t * data, int16_t * holding_registers)
+static void copy_to_holding_registers(uint16_t n_registers, uint8_t const * const data, int16_t * holding_registers)
 {
     uint16_t i;
     for (i = 0; i < n_registers; i++)
@@ -110,7 +95,7 @@ static void copy_byte_to_coils(uint8_t data, uint16_t n_coils, bool * coils)
     }
 }
 
-static void copy_to_multiple_coils(uint16_t n_coils, uint8_t *data, bool * coils)
+static void copy_to_multiple_coils(uint16_t n_coils, uint8_t const * const data, bool * coils)
 {
     uint8_t byte = 0;
     while(n_coils >= 8)
@@ -123,7 +108,7 @@ static void copy_to_multiple_coils(uint16_t n_coils, uint8_t *data, bool * coils
 
 }
 
-static bool bytes_to_on_off_data(uint8_t * bytes)
+static bool bytes_to_on_off_data(uint8_t const * const bytes)
 {
     return bytes[0] == 0xFF;
 }
@@ -164,12 +149,12 @@ static bool is_valid_function_code(uint8_t code)
     return valid;
 }
 
-static uint8_t get_message_address(char const * const message)
+static uint8_t get_message_address(uint8_t const * const message)
 {
     return (uint8_t)message[0];
 }
 
-static MODBUS_FUNCTION_CODE get_message_function_code(char const * const message)
+static MODBUS_FUNCTION_CODE get_message_function_code(uint8_t const * const message)
 {
     return (MODBUS_FUNCTION_CODE)message[1];
 }
@@ -210,7 +195,7 @@ static MODBUS_EXCEPTION_CODES handle_read_discrete_inputs(void const * const dat
     return EXCEPTION_NONE;
 }
 
-static bool on_off_data_is_valid(uint8_t * data)
+static bool on_off_data_is_valid(uint8_t const * const data)
 {
     bool valid_on_off_data = false;
     valid_on_off_data |= (data[0] == 0xFF) && (data[1] == 0x00);
@@ -218,20 +203,20 @@ static bool on_off_data_is_valid(uint8_t * data)
     return valid_on_off_data;
 }
 
-static MODBUS_EXCEPTION_CODES handle_write_single_coil(void const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_single_coil(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.write_single_coil) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    if (!on_off_data_is_valid((uint8_t*)data + 2)) { return EXCEPTION_ILLEGAL_DATA_VALUE; }
+    if (!on_off_data_is_valid(data + 2)) { return EXCEPTION_ILLEGAL_DATA_VALUE; }
 
-    uint16_t coil = bytes_to_uint16_t((uint8_t*)data);
+    uint16_t coil = bytes_to_uint16_t(data);
 
     if (!is_valid_coil_address(coil, handler))
     {
         return EXCEPTION_ILLEGAL_DATA_ADDRESS;  
     }
 
-    bool on = bytes_to_on_off_data((uint8_t*)data + 2);
+    bool on = bytes_to_on_off_data(data + 2);
 
     handler.functions.write_single_coil(coil, on);
     
@@ -239,7 +224,7 @@ static MODBUS_EXCEPTION_CODES handle_write_single_coil(void const * const data, 
 
 }
 
-static MODBUS_EXCEPTION_CODES handle_write_multiple_coils(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_multiple_coils(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.write_multiple_coils) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
@@ -258,12 +243,12 @@ static MODBUS_EXCEPTION_CODES handle_write_multiple_coils(char const * const dat
     return EXCEPTION_NONE;
 }
 
-static MODBUS_EXCEPTION_CODES handle_read_input_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_input_registers(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.read_input_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    uint16_t first_reg = bytes_to_uint16_t((uint8_t*)data);
-    uint16_t n_registers = bytes_to_uint16_t((uint8_t*)data+2);
+    uint16_t first_reg = bytes_to_uint16_t(data);
+    uint16_t n_registers = bytes_to_uint16_t(data+2);
     uint16_t last_reg = first_reg + n_registers - 1;
     
     if (!is_valid_input_register_addr(first_reg, handler) || !is_valid_input_register_addr(last_reg, handler))
@@ -276,12 +261,12 @@ static MODBUS_EXCEPTION_CODES handle_read_input_registers(char const * const dat
     return EXCEPTION_NONE;
 }
 
-static MODBUS_EXCEPTION_CODES handle_read_holding_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_holding_registers(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.read_holding_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    uint16_t first_reg = bytes_to_uint16_t((uint8_t*)data);
-    uint16_t n_registers = bytes_to_uint16_t((uint8_t*)data+2);
+    uint16_t first_reg = bytes_to_uint16_t(data);
+    uint16_t n_registers = bytes_to_uint16_t(data+2);
     uint16_t last_reg = first_reg + n_registers - 1;
 
     if (!is_valid_holding_register_addr(first_reg, handler) || !is_valid_holding_register_addr(last_reg, handler))
@@ -294,12 +279,12 @@ static MODBUS_EXCEPTION_CODES handle_read_holding_registers(char const * const d
     return EXCEPTION_NONE;
 }
 
-static MODBUS_EXCEPTION_CODES handle_write_holding_register(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_holding_register(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.write_holding_register) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
-    int16_t value = bytes_to_int16_t((uint8_t*)data+2);
+    uint16_t reg = bytes_to_uint16_t(data);
+    int16_t value = bytes_to_int16_t(data+2);
 
     if (!is_valid_holding_register_addr(reg, handler))
     {
@@ -311,12 +296,12 @@ static MODBUS_EXCEPTION_CODES handle_write_holding_register(char const * const d
     return EXCEPTION_NONE;
 }
 
-static MODBUS_EXCEPTION_CODES handle_write_holding_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_write_holding_registers(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.write_holding_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    uint16_t first_reg = bytes_to_uint16_t((uint8_t*)data);
-    uint16_t n_registers = bytes_to_int16_t((uint8_t*)data+2);
+    uint16_t first_reg = bytes_to_uint16_t(data);
+    uint16_t n_registers = bytes_to_int16_t(data+2);
     uint16_t last_reg = first_reg + n_registers - 1;
 
     uint8_t n_values = ((uint8_t*)data)[4];
@@ -328,23 +313,23 @@ static MODBUS_EXCEPTION_CODES handle_write_holding_registers(char const * const 
         return EXCEPTION_ILLEGAL_DATA_ADDRESS;
     }
 
-    copy_to_holding_registers(n_registers, (uint8_t*)data + 5, handler.data.write_holding_registers);
+    copy_to_holding_registers(n_registers, data + 5, handler.data.write_holding_registers);
 
     handler.functions.write_holding_registers(first_reg, n_registers, handler.data.write_holding_registers);
 
     return EXCEPTION_NONE;
 }
 
-static MODBUS_EXCEPTION_CODES handle_read_write_registers(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_read_write_registers(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.read_write_registers) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    uint16_t read_start_reg = bytes_to_uint16_t((uint8_t*)data);
-    uint16_t n_read_count = bytes_to_uint16_t((uint8_t*)data+2);
+    uint16_t read_start_reg = bytes_to_uint16_t(data);
+    uint16_t n_read_count = bytes_to_uint16_t(data+2);
     uint16_t read_end_reg = read_start_reg + n_read_count - 1;
     
-    uint16_t write_start_reg = bytes_to_uint16_t((uint8_t*)data+4);
-    uint16_t n_write_count = bytes_to_uint16_t((uint8_t*)data+6);
+    uint16_t write_start_reg = bytes_to_uint16_t(data+4);
+    uint16_t n_write_count = bytes_to_uint16_t(data+6);
     uint16_t write_end_reg = write_start_reg + n_write_count - 1;
     uint16_t write_byte_count = (uint16_t)data[8];
 
@@ -360,7 +345,7 @@ static MODBUS_EXCEPTION_CODES handle_read_write_registers(char const * const dat
 
     if (bad_addresses || bad_write_byte_count) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
 
-    copy_to_holding_registers(n_write_count, (uint8_t*)data + 9, handler.data.write_holding_registers);
+    copy_to_holding_registers(n_write_count, data + 9, handler.data.write_holding_registers);
 
     handler.functions.read_write_registers(read_start_reg, n_read_count, write_start_reg, n_write_count, handler.data.write_holding_registers);
 
@@ -368,13 +353,13 @@ static MODBUS_EXCEPTION_CODES handle_read_write_registers(char const * const dat
 }
 
 
-static MODBUS_EXCEPTION_CODES handle_mask_write_register(char const * const data, const MODBUS_HANDLER& handler)
+static MODBUS_EXCEPTION_CODES handle_mask_write_register(uint8_t const * const data, const MODBUS_HANDLER& handler)
 {
     if (!handler.functions.mask_write_register) { return EXCEPTION_ILLEGAL_FUNCTION_CODE; }
 
-    uint16_t reg = bytes_to_uint16_t((uint8_t*)data);
-    uint16_t and_mask = bytes_to_uint16_t((uint8_t*)data + 2);
-    uint16_t or_mask = bytes_to_uint16_t((uint8_t*)data + 4);
+    uint16_t reg = bytes_to_uint16_t(data);
+    uint16_t and_mask = bytes_to_uint16_t(data + 2);
+    uint16_t or_mask = bytes_to_uint16_t(data + 4);
 
     if (!is_valid_holding_register_addr(reg, handler)) { return EXCEPTION_ILLEGAL_DATA_ADDRESS; }
     
@@ -383,19 +368,48 @@ static MODBUS_EXCEPTION_CODES handle_mask_write_register(char const * const data
     return EXCEPTION_NONE;
 }
 
-static bool validate_message_crc(const char * message, int message_length, bool reverse_order = false)
+/*
+ * Public Module Functions
+ */
+
+uint16_t modbus_get_crc16(uint8_t const * const buffer, uint8_t number_of_bytes)
+{
+    uint16_t crc = 0xFFFF;
+ 
+    for (int pos = 0; pos < number_of_bytes; pos++)
+    {
+        crc ^= (uint16_t)buffer[pos];
+ 
+        for (uint8_t i = 8; i != 0; i--)
+        {
+            if ((crc & 0x0001) != 0)
+            {
+                crc >>= 1;
+                crc ^= 0xA001;
+            }
+            else
+            {
+              crc >>= 1;
+            }
+        }
+
+    }
+    return crc;
+}
+
+bool modbus_validate_message_crc(const uint8_t * message, int message_length, bool reverse_order)
 {
     bool valid_crc = true;
 
     if (application_check_crc(message, message_length, reverse_order) == CRC_PASSED) { return true; }
 
-    char expected_hi;
-    char expected_lo;
+    uint8_t expected_hi;
+    uint8_t expected_lo;
     
-    uint16_t expected_crc = get_crc16((uint8_t *)message, message_length - 2);
+    uint16_t expected_crc = modbus_get_crc16(message, message_length - 2);
     
-    expected_hi = reverse_order ? (char)(expected_crc & 0xFF) : (char)(expected_crc >> 8);
-    expected_lo = reverse_order ? (char)(expected_crc >> 8) : (char)(expected_crc & 0xFF);
+    expected_hi = reverse_order ? (uint8_t)(expected_crc & 0xFF) : (uint8_t)(expected_crc >> 8);
+    expected_lo = reverse_order ? (uint8_t)(expected_crc >> 8) : (uint8_t)(expected_crc & 0xFF);
     
     valid_crc &= message[message_length-1] == expected_hi;
     valid_crc &= message[message_length-2] == expected_lo;
@@ -403,18 +417,21 @@ static bool validate_message_crc(const char * message, int message_length, bool 
     return valid_crc;
 }
 
-/*
- * Public Module Functions
- */
-
-void modbus_service_message(char const * const message, const MODBUS_HANDLER& handler, int message_length, bool check_crc)
-{       
+void modbus_service_message(uint8_t const * const message, const MODBUS_HANDLER& handler, int message_length, bool check_crc)
+{
     MODBUS_FUNCTION_CODE function_code;
 
     if (!message) { return; }
-    if ((get_message_address(message) != MODBUS_BROADCAST_ADDRESS) && (get_message_address(message) != handler.data.device_address)) { return; }
+
+    uint8_t message_address = get_message_address(message);
+
+    if ((message_address != MODBUS_BROADCAST_ADDRESS) && (message_address != handler.data.device_address)) { return; }
     if (!is_valid_function_code(message[1])) { return; }
-    if (check_crc && !validate_message_crc(message, message_length))
+
+    s_current_message = message;
+    s_current_message_length = message_length;
+
+    if (check_crc && !modbus_validate_message_crc(message, message_length))
     {
         if (handler.functions.exception_handler)
         {
@@ -425,7 +442,7 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
 
     function_code = get_message_function_code(message);
 
-    char const * const data_start = &message[2];
+    uint8_t const * const data_start = &message[2];
 
     MODBUS_EXCEPTION_CODES exception = EXCEPTION_ILLEGAL_FUNCTION_CODE;
 
@@ -470,6 +487,23 @@ void modbus_service_message(char const * const message, const MODBUS_HANDLER& ha
         handler.functions.exception_handler(function_code + 128, exception);    
     }
 
+    s_current_message = NULL;
+    s_current_message_length = 0;
+}
+
+uint8_t const * modbus_get_current_message()
+{
+    return s_current_message; 
+}
+
+uint8_t modbus_get_current_message_address()
+{
+    return get_message_address(s_current_message);
+}
+
+int modbus_get_current_message_length()
+{
+    return s_current_message_length;
 }
 
 int modbus_start_response(uint8_t * const buffer, MODBUS_FUNCTION_CODE function_code, uint8_t device_address)
@@ -503,7 +537,7 @@ int modbus_write(uint8_t * const buffer, int16_t value)
 
 int modbus_write_crc(uint8_t * const buffer, uint8_t bytes, bool reverse_order)
 {
-    uint16_t crc = get_crc16(buffer, bytes);
+    uint16_t crc = modbus_get_crc16(buffer, bytes);
     uint8_t * crc_bytes = (uint8_t *)&crc;
     buffer[bytes] = crc_bytes[reverse_order ? 1 : 0];
     buffer[bytes+1] = crc_bytes[reverse_order ? 0 : 1];

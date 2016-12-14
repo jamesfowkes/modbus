@@ -8,6 +8,10 @@
 
 static int s_last_function_code;
 
+static uint8_t const * s_current_message;
+static int s_current_message_length;
+static uint8_t s_current_message_address;
+
 static const int NUMBER_OF_COILS = 6;
 static const int NUMBER_OF_INPUTS = 4;
 static const int NUMBER_OF_INPUT_REGISTERS = 4;
@@ -16,12 +20,20 @@ static const int NUMBER_OF_HOLDING_REGISTERS = 6;
 static bool s_write_multiple_coils_data_buffer[NUMBER_OF_COILS];
 static int16_t s_write_holding_register_data_buffer[NUMBER_OF_HOLDING_REGISTERS+1];
 
+static void store_current_message_data()
+{
+	s_current_message = modbus_get_current_message();
+	s_current_message_length = modbus_get_current_message_length();
+	s_current_message_address = modbus_get_current_message_address();
+}
+
 static struct _read_coils_data {uint16_t first_coil; uint16_t n_coils;} s_read_coils_data;
 static void read_coils(uint16_t first_coil, uint16_t n_coils)
 {
 	s_read_coils_data.first_coil = first_coil;
 	s_read_coils_data.n_coils = n_coils;
 	s_last_function_code = READ_COILS;
+	store_current_message_data();
 }
 
 static struct _read_discrete_inputs_data {uint16_t first_input; uint16_t n_inputs;} s_read_discrete_inputs_data;
@@ -30,6 +42,7 @@ static void read_discrete_inputs(uint16_t first_input, uint16_t n_inputs)
 	s_read_discrete_inputs_data.first_input = first_input;
 	s_read_discrete_inputs_data.n_inputs = n_inputs;
 	s_last_function_code = READ_DISCRETE_INPUTS;
+	store_current_message_data();
 }
 
 static struct _write_single_coil_data {uint16_t coil; bool on;} s_write_single_coil_data;
@@ -38,6 +51,7 @@ static void write_single_coil(uint16_t coil, bool on)
 	s_write_single_coil_data.coil = coil;
 	s_write_single_coil_data.on = on;
 	s_last_function_code = WRITE_SINGLE_COIL;
+	store_current_message_data();
 }
 
 static struct _write_multiple_coils_data {uint16_t first_coil; uint16_t n_coils; bool * values;} s_write_multiple_coils_data;
@@ -48,6 +62,7 @@ static void write_multiple_coils(uint16_t first_coil, uint16_t n_coils, bool * v
 	s_write_multiple_coils_data.values = values;
 
 	s_last_function_code = WRITE_MULTIPLE_COILS;
+	store_current_message_data();
 }
 
 static struct _read_input_registers_data {uint16_t reg; uint16_t n_registers;} s_read_input_registers_data;
@@ -56,6 +71,7 @@ static void read_input_registers(uint16_t reg, uint16_t n_registers)
 	s_read_input_registers_data.reg = reg;
 	s_read_input_registers_data.n_registers = n_registers;
 	s_last_function_code = READ_INPUT_REGISTERS;
+	store_current_message_data();
 }
 
 static struct _read_holding_registers_data {uint16_t reg; uint16_t n_registers;} s_read_holding_registers_data;
@@ -64,6 +80,7 @@ static void read_holding_registers(uint16_t reg, uint16_t n_registers)
 	s_read_holding_registers_data.reg = reg;
 	s_read_holding_registers_data.n_registers = n_registers;
 	s_last_function_code = READ_HOLDING_REGISTERS;
+	store_current_message_data();
 }
 
 static struct _write_holding_register_data {uint16_t reg; int16_t value;} s_write_holding_register_data;
@@ -72,6 +89,7 @@ static void write_holding_register(uint16_t reg, int16_t value)
 	s_write_holding_register_data.reg = reg;
 	s_write_holding_register_data.value = value;
 	s_last_function_code = WRITE_HOLDING_REGISTER;
+	store_current_message_data();
 }
 
 static struct _write_holding_registers_data { uint16_t first_reg; uint16_t n_registers; int16_t * values; } s_write_holding_registers_data;
@@ -81,6 +99,7 @@ static void write_holding_registers(uint16_t first_reg, uint16_t n_registers, in
 	s_write_holding_registers_data.n_registers = n_registers;
 	s_write_holding_registers_data.values = values;
 	s_last_function_code = WRITE_HOLDING_REGISTERS;
+	store_current_message_data();
 }
 
 static struct _read_write_registers_data { uint16_t read_start_reg; uint16_t n_read_count; uint16_t write_start_reg; uint16_t n_write_count; int16_t * values; } s_read_write_registers_data;
@@ -92,6 +111,7 @@ static void read_write_registers(uint16_t read_start_reg, uint16_t n_read_count,
 	s_read_write_registers_data.n_write_count = n_write_count;
 	s_read_write_registers_data.values = values;
 	s_last_function_code = READ_WRITE_REGISTERS;
+	store_current_message_data();
 }
 
 static struct _mask_write_register_data { uint16_t reg; uint16_t and_mask; uint16_t or_mask; } s_mask_write_register_data;
@@ -102,6 +122,7 @@ static void mask_write_register(uint16_t reg, uint16_t and_mask, uint16_t or_mas
 	s_mask_write_register_data.or_mask = or_mask;
 
 	s_last_function_code = MASK_WRITE_REGISTER;
+	store_current_message_data();
 }
 
 static MODBUS_HANDLER s_modbus_handler;
@@ -139,12 +160,14 @@ class ModbusTest : public CppUnit::TestFixture  {
 	CPPUNIT_TEST(test_service_with_read_write_registers_message);
 	CPPUNIT_TEST(test_service_with_mask_write_register_message);
 
+	CPPUNIT_TEST(test_service_get_current_message_functionality);
+
 	CPPUNIT_TEST_SUITE_END();
 
 	void test_service_with_no_message_does_not_call_any_functions()
 	{
-		char message[] = {(char)0xAB};
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		uint8_t message[] = {(uint8_t)0xAB};
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL(0, s_last_function_code);
 	}
 
@@ -156,7 +179,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_check_crc_enabled_does_not_handle_message_with_invalid_crc()
 	{
-		char message[] = {(char)0xAA, (char)READ_COILS, (char)0x00, (char)0x00, (char)0x00, (char)NUMBER_OF_COILS, (char)(0x13), (char)(0xF3)};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)READ_COILS, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)NUMBER_OF_COILS, (uint8_t)(0x13), (uint8_t)(0xF3)};
 
 		modbus_service_message(message, s_modbus_handler, 8, true);
 		CPPUNIT_ASSERT_EQUAL(0, s_last_function_code);
@@ -164,7 +187,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_check_crc_enabled_handles_message_with_valid_crc()
 	{
-		char message[] = {(char)0xAA, (char)READ_COILS, (char)0x00, (char)0x00, (char)0x00, (char)NUMBER_OF_COILS, (char)(0xD3), (char)(0xA5)};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)READ_COILS, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)NUMBER_OF_COILS, (uint8_t)(0xA5), (uint8_t)(0xD3)};
 
 		modbus_service_message(message, s_modbus_handler, 8, true);
 		CPPUNIT_ASSERT_EQUAL((int)READ_COILS, s_last_function_code);
@@ -174,9 +197,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_read_coils_message()
 	{
-		char message[] = {(char)0xAA, (char)READ_COILS, (char)0x00, (char)0x00, (char)0x00, (char)NUMBER_OF_COILS};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)READ_COILS, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)NUMBER_OF_COILS};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_COILS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0000, s_read_coils_data.first_coil);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_COILS, s_read_coils_data.n_coils);
@@ -184,9 +207,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_read_discrete_inputs_message()
 	{
-		char message[] = {(char)0xAA, (char)READ_DISCRETE_INPUTS, (char)0x00, (char)0x00, (char)0x00, (char)NUMBER_OF_INPUTS};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)READ_DISCRETE_INPUTS, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)NUMBER_OF_INPUTS};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_DISCRETE_INPUTS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0000, s_read_discrete_inputs_data.first_input);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_INPUTS, s_read_discrete_inputs_data.n_inputs);
@@ -194,9 +217,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_valid_write_single_coil_message()
 	{
-		char message[] = {(char)0xAA, (char)WRITE_SINGLE_COIL, (char)0x00, (char)0x04, (char)0xFF, (char)0x00};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)WRITE_SINGLE_COIL, (uint8_t)0x00, (uint8_t)0x04, (uint8_t)0xFF, (uint8_t)0x00};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_SINGLE_COIL, s_last_function_code);
 
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0004, s_write_single_coil_data.coil);
@@ -205,14 +228,14 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_write_multiple_coils_message()
 	{
-		char message[] = {
-			(char)0xAA, (char)WRITE_MULTIPLE_COILS,
-			(char)0x00, (char)0x01,
-			(char)0x00, (char)0x03,
-			(char)0x01,
-			(char)0b00000101};
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)WRITE_MULTIPLE_COILS,
+			(uint8_t)0x00, (uint8_t)0x01,
+			(uint8_t)0x00, (uint8_t)0x03,
+			(uint8_t)0x01,
+			(uint8_t)0b00000101};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_MULTIPLE_COILS, s_last_function_code);
 
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0001, s_write_multiple_coils_data.first_coil);
@@ -224,9 +247,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_read_input_registers_message()
 	{
-		char message[] = {(char)0xAA, (char)READ_INPUT_REGISTERS, (char)0x00, (char)0x00, (char)0x00, (char)NUMBER_OF_INPUT_REGISTERS};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)READ_INPUT_REGISTERS, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)NUMBER_OF_INPUT_REGISTERS};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_INPUT_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0000, s_read_input_registers_data.reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_INPUT_REGISTERS, s_read_input_registers_data.n_registers);
@@ -234,9 +257,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_read_holding_registers_message()
 	{
-		char message[] = {(char)0xAA, (char)READ_HOLDING_REGISTERS, (char)0x00, (char)0x00, (char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)READ_HOLDING_REGISTERS, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)0x00, (uint8_t)NUMBER_OF_HOLDING_REGISTERS};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)READ_HOLDING_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0000, s_read_holding_registers_data.reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_HOLDING_REGISTERS, s_read_holding_registers_data.n_registers);
@@ -244,9 +267,9 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_write_holding_register_message()
 	{
-		char message[] = {(char)0xAA, (char)WRITE_HOLDING_REGISTER, (char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS-1, (char)0x01, (char)0x43};
+		uint8_t message[] = {(uint8_t)0xAA, (uint8_t)WRITE_HOLDING_REGISTER, (uint8_t)0x00, (uint8_t)NUMBER_OF_HOLDING_REGISTERS-1, (uint8_t)0x01, (uint8_t)0x43};
 		
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_HOLDING_REGISTER, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)(NUMBER_OF_HOLDING_REGISTERS-1), s_write_holding_register_data.reg);
 		CPPUNIT_ASSERT_EQUAL((int16_t)0x0143, s_write_holding_register_data.value);
@@ -254,20 +277,20 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_write_holding_registers_message_full_addr_range()
 	{
-		char message[] = {
-			(char)0xAA, (char)WRITE_HOLDING_REGISTERS,
-			(char)0x00, (char)0x00,
-			(char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS,
-			(char)(NUMBER_OF_HOLDING_REGISTERS * 2),
-			(char)0x00, (char)0x50,
-			(char)0xF0, (char)0x22,
-			(char)0xBB, (char)0x57,
-			(char)0xDF, (char)0x49,
-			(char)0xE5, (char)0x33,
-			(char)0x82, (char)0xC3,
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)WRITE_HOLDING_REGISTERS,
+			(uint8_t)0x00, (uint8_t)0x00,
+			(uint8_t)0x00, (uint8_t)NUMBER_OF_HOLDING_REGISTERS,
+			(uint8_t)(NUMBER_OF_HOLDING_REGISTERS * 2),
+			(uint8_t)0x00, (uint8_t)0x50,
+			(uint8_t)0xF0, (uint8_t)0x22,
+			(uint8_t)0xBB, (uint8_t)0x57,
+			(uint8_t)0xDF, (uint8_t)0x49,
+			(uint8_t)0xE5, (uint8_t)0x33,
+			(uint8_t)0x82, (uint8_t)0xC3,
 		};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_HOLDING_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x0000, s_write_holding_registers_data.first_reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)NUMBER_OF_HOLDING_REGISTERS, s_write_holding_registers_data.n_registers);
@@ -283,15 +306,15 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_write_holding_registers_message_last_addr()
 	{
-		char message[] = {
-			(char)0xAA, (char)WRITE_HOLDING_REGISTERS,
-			(char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS-1,
-			(char)0x00, (char)0x01,
-			(char)0x02,
-			(char)0x00, (char)0x50,
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)WRITE_HOLDING_REGISTERS,
+			(uint8_t)0x00, (uint8_t)NUMBER_OF_HOLDING_REGISTERS-1,
+			(uint8_t)0x00, (uint8_t)0x01,
+			(uint8_t)0x02,
+			(uint8_t)0x00, (uint8_t)0x50,
 		};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)WRITE_HOLDING_REGISTERS, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)(NUMBER_OF_HOLDING_REGISTERS-1), s_write_holding_registers_data.first_reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x01, s_write_holding_registers_data.n_registers);
@@ -302,22 +325,22 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_read_write_registers_message()
 	{
-		char message[] = {
-			(char)0xAA, (char)READ_WRITE_REGISTERS,
-			(char)0x00, (char)0x00,
-			(char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS,
-			(char)0x00, (char)0x00,
-			(char)0x00, (char)NUMBER_OF_HOLDING_REGISTERS,
-			(char)(NUMBER_OF_HOLDING_REGISTERS*2),
-			(char)0xF0, (char)0x00,
-			(char)0xF0, (char)0x01,
-			(char)0xF0, (char)0x02,
-			(char)0xF0, (char)0x03,
-			(char)0xF0, (char)0x04,
-			(char)0xF0, (char)0x05,
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)READ_WRITE_REGISTERS,
+			(uint8_t)0x00, (uint8_t)0x00,
+			(uint8_t)0x00, (uint8_t)NUMBER_OF_HOLDING_REGISTERS,
+			(uint8_t)0x00, (uint8_t)0x00,
+			(uint8_t)0x00, (uint8_t)NUMBER_OF_HOLDING_REGISTERS,
+			(uint8_t)(NUMBER_OF_HOLDING_REGISTERS*2),
+			(uint8_t)0xF0, (uint8_t)0x00,
+			(uint8_t)0xF0, (uint8_t)0x01,
+			(uint8_t)0xF0, (uint8_t)0x02,
+			(uint8_t)0xF0, (uint8_t)0x03,
+			(uint8_t)0xF0, (uint8_t)0x04,
+			(uint8_t)0xF0, (uint8_t)0x05,
 		};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		
 		CPPUNIT_ASSERT_EQUAL((int)READ_WRITE_REGISTERS, s_last_function_code);
 	
@@ -338,18 +361,34 @@ class ModbusTest : public CppUnit::TestFixture  {
 
 	void test_service_with_mask_write_register_message()
 	{
-		char message[] = {
-			(char)0xAA, (char)MASK_WRITE_REGISTER,
-			(char)0x00, (char)(NUMBER_OF_HOLDING_REGISTERS-1),
-			(char)0x03, (char)0xFF,
-			(char)0x00, (char)0x7F,
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)MASK_WRITE_REGISTER,
+			(uint8_t)0x00, (uint8_t)(NUMBER_OF_HOLDING_REGISTERS-1),
+			(uint8_t)0x03, (uint8_t)0xFF,
+			(uint8_t)0x00, (uint8_t)0x7F,
 		};
 
-		modbus_service_message(message, s_modbus_handler, 0, false);
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
 		CPPUNIT_ASSERT_EQUAL((int)MASK_WRITE_REGISTER, s_last_function_code);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)(NUMBER_OF_HOLDING_REGISTERS-1), s_mask_write_register_data.reg);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x03FF, s_mask_write_register_data.and_mask);
 		CPPUNIT_ASSERT_EQUAL((uint16_t)0x007F, s_mask_write_register_data.or_mask);
+	}
+
+	void test_service_get_current_message_functionality()
+	{
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)MASK_WRITE_REGISTER,
+			(uint8_t)0x00, (uint8_t)(NUMBER_OF_HOLDING_REGISTERS-1),
+			(uint8_t)0x03, (uint8_t)0xFF,
+			(uint8_t)0x00, (uint8_t)0x7F,
+		};
+
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
+
+		CPPUNIT_ASSERT_EQUAL((uint8_t const * )message, s_current_message);
+		CPPUNIT_ASSERT_EQUAL(8, s_current_message_length);
+		CPPUNIT_ASSERT_EQUAL((uint8_t)0xAA, s_current_message_address);
 	}
 
 public:
@@ -383,6 +422,10 @@ public:
 		{
 			s_write_holding_register_data_buffer[i] = 0x0000;
 		}
+
+		s_current_message = NULL;
+		s_current_message_address = 0x00;
+		s_current_message_length = 0;
 	}
 };
 
