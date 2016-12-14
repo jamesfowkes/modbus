@@ -40,6 +40,7 @@ class ModbusResponseTest : public CppUnit::TestFixture  {
 	CPPUNIT_TEST(test_modbus_get_write_holding_registers_response);
 
 	CPPUNIT_TEST(test_modbus_write_crc);
+	CPPUNIT_TEST(test_modbus_write_crc_reversed);
 
 	CPPUNIT_TEST_SUITE_END();
 
@@ -316,6 +317,18 @@ class ModbusResponseTest : public CppUnit::TestFixture  {
 		
 		int bytes_written = 0;
 		bytes_written = modbus_write_crc(buffer, 6);
+
+		CPPUNIT_ASSERT_EQUAL(2, bytes_written);
+		CPPUNIT_ASSERT_EQUAL((int)0x02, (int)buffer[6]);
+		CPPUNIT_ASSERT_EQUAL((int)0x25, (int)buffer[7]);
+	}
+
+	void test_modbus_write_crc_reversed()
+	{
+		uint8_t buffer[] = {0xD4, 0xE3, 0x39, 0x8C, 0x23, 0xA4, 0x00, 0x00};
+		
+		int bytes_written = 0;
+		bytes_written = modbus_write_crc(buffer, 6, true);
 
 		CPPUNIT_ASSERT_EQUAL(2, bytes_written);
 		CPPUNIT_ASSERT_EQUAL((int)0x25, (int)buffer[6]);
