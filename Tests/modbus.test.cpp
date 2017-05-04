@@ -161,6 +161,7 @@ class ModbusTest : public CppUnit::TestFixture  {
 	CPPUNIT_TEST(test_service_with_mask_write_register_message);
 
 	CPPUNIT_TEST(test_service_get_current_message_functionality);
+	CPPUNIT_TEST(test_service_get_message_was_broadcast_functionality);
 
 	CPPUNIT_TEST_SUITE_END();
 
@@ -389,6 +390,25 @@ class ModbusTest : public CppUnit::TestFixture  {
 		CPPUNIT_ASSERT_EQUAL((uint8_t const * )message, s_current_message);
 		CPPUNIT_ASSERT_EQUAL(8, s_current_message_length);
 		CPPUNIT_ASSERT_EQUAL((uint8_t)0xAA, s_current_message_address);
+	}
+
+	void test_service_get_message_was_broadcast_functionality()
+	{
+		uint8_t message[] = {
+			(uint8_t)0xAA, (uint8_t)MASK_WRITE_REGISTER,
+			(uint8_t)0x00, (uint8_t)(NUMBER_OF_HOLDING_REGISTERS-1),
+			(uint8_t)0x03, (uint8_t)0xFF,
+			(uint8_t)0x00, (uint8_t)0x7F,
+		};
+
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
+
+		CPPUNIT_ASSERT(!modbus_last_message_was_broadcast());
+
+		message[0] = MODBUS_BROADCAST_ADDRESS;
+		modbus_service_message(message, s_modbus_handler, sizeof(message)/sizeof(uint8_t), false);
+
+		CPPUNIT_ASSERT(modbus_last_message_was_broadcast());
 	}
 
 public:

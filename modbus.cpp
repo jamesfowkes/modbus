@@ -20,6 +20,7 @@
 
 static uint8_t const * s_current_message = NULL;
 static int s_current_message_length = 0;
+static bool s_broadcast;
 
 /*
  * Private Module Functions
@@ -425,7 +426,9 @@ void modbus_service_message(uint8_t const * const message, const MODBUS_HANDLER&
 
     uint8_t message_address = get_message_address(message);
 
-    if ((message_address != MODBUS_BROADCAST_ADDRESS) && (message_address != handler.data.device_address)) { return; }
+    s_broadcast = (message_address == MODBUS_BROADCAST_ADDRESS);
+
+    if (!s_broadcast && (message_address != handler.data.device_address)) { return; }
     if (!is_valid_function_code(message[1])) { return; }
 
     s_current_message = message;
@@ -499,6 +502,11 @@ uint8_t const * modbus_get_current_message()
 uint8_t modbus_get_current_message_address()
 {
     return get_message_address(s_current_message);
+}
+
+bool modbus_last_message_was_broadcast()
+{
+    return s_broadcast;
 }
 
 int modbus_get_current_message_length()

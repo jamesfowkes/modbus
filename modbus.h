@@ -102,5 +102,6 @@ bool modbus_validate_message_crc(const uint8_t * message, int message_length, bo
 uint8_t const * modbus_get_current_message();
 uint8_t modbus_get_current_message_address();
 int modbus_get_current_message_length();
+bool modbus_last_message_was_broadcast();
 
 #endif
